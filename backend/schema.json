@@ -1,0 +1,26 @@
+{
+    "user": {
+        "program": {
+            "workout": {
+                "exercise": {
+                    "sets": [
+                        {
+                            "intensity_type": {
+                                "enum": [
+                                    "rir",
+                                    "rpe",
+                                    "percentage",
+                                    "absolute weight"
+                                ]
+                            },
+                            "prescribed_intensity_value": "integer",
+                            "prescribed_repetitions": "integer",
+                            "actual_intensity": "integer",
+                            "actual_repetitions": "integer"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

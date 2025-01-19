@@ -86,6 +86,19 @@ func generateToken(user User) (string, error) {
 	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 }
 
+func setTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400,
+	})
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+}
+
 func main() {
 	if err := initDB(); err != nil {
 		log.Fatal(err)
@@ -94,10 +107,11 @@ func main() {
 
 	// Setup CORS
 	corsMiddleware := cors.New(cors.Options{
-		AllowedOrigins:   []string{os.Getenv("FRONTEND_URL")},
+		AllowedOrigins:   []string{os.Getenv("CORS_ORIGIN")},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Origin"},
 		AllowCredentials: true,
+		ExposedHeaders:   []string{"Set-Cookie"},
 	})
 
 	const port = "8080"
@@ -105,6 +119,7 @@ func main() {
 
 	mux.HandleFunc("/api/register", createAccountHandler)
 	mux.HandleFunc("/api/login", loginHandler)
+	mux.HandleFunc("/api/verify", verifyHandler)
 
 	handler := corsMiddleware.Handler(mux)
 
@@ -172,9 +187,11 @@ func createAccountHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setTokenCookie(w, token)
+
 	response := LoginResponse{
 		User:  user,
-		Token: token,
+		Token: "", // Don't send token in response body
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -232,11 +249,55 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setTokenCookie(w, token)
+
 	response := LoginResponse{
 		User:  user,
-		Token: token,
+		Token: "", // Don't send token in response body
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func verifyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		fmt.Println("Invalid cookie")
+		fmt.Printf("Token %v", cookie)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token, err := jwt.ParseWithClaims(cookie.Value, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil || !token.Valid {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Fetch user data
+	var user User
+	query := `SELECT user_id, first_name, last_name, email, role FROM users WHERE user_id = $1`
+	err = db.QueryRow(query, claims.UserID).Scan(&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.Role)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
 }

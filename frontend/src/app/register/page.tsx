@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function Register() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -11,6 +13,24 @@ export default function Register() {
     password: "",
     role: "athlete"
   });
+
+  useEffect(() => {
+    const verifyAuth = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/verify`, {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          router.push('/dashboard');
+        }
+      } catch (error) {
+        console.error('Verification error:', error);
+      }
+    };
+
+    verifyAuth();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

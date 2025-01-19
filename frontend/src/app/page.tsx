@@ -1,6 +1,30 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const verifyAuth = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/verify`, {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          router.push('/dashboard');
+        }
+      } catch (error) {
+        console.error('Verification error:', error);
+      }
+    };
+
+    verifyAuth();
+  }, [router]);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8">
       <main className="max-w-md w-full space-y-8">

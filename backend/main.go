@@ -45,6 +45,16 @@ type LoginResponse struct {
 	Token string `json:"token"`
 }
 
+type Program struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	CreatorID        string `json:"creatorId"`
+	DaysPerWeek      int    `json:"daysPerWeek"`
+	NumberOfWorkouts int    `json:"numberOfWorkouts"`
+	ProgramType      string `json:"programType"`
+}
+
 func initDB() error {
 	if err := godotenv.Load(); err != nil {
 		return fmt.Errorf("error loading .env file: %v", err)
@@ -120,6 +130,7 @@ func main() {
 	mux.HandleFunc("/api/register", createAccountHandler)
 	mux.HandleFunc("/api/login", loginHandler)
 	mux.HandleFunc("/api/verify", verifyHandler)
+	mux.HandleFunc("/api/programs", programHandler)
 
 	handler := corsMiddleware.Handler(mux)
 
@@ -300,4 +311,71 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
+}
+
+func programHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Verify JWT token
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token, err := jwt.ParseWithClaims(cookie.Value, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil || !token.Valid {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var program Program
+	if err := json.NewDecoder(r.Body).Decode(&program); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if program.Name == "" || program.NumberOfWorkouts == 0 {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	// Insert program into database
+	query := `
+		INSERT INTO programs (name, description, creator_id, days_per_week, number_of_workouts, program_type)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING program_id`
+
+	err = db.QueryRow(
+		query,
+		program.Name,
+		program.Description,
+		claims.UserID,
+		program.DaysPerWeek,
+		program.NumberOfWorkouts,
+		program.ProgramType,
+	).Scan(&program.ID)
+
+	if err != nil {
+		log.Printf("Database error: %v", err)
+		http.Error(w, "Error creating program", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(program)
 }
